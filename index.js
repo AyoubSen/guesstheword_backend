@@ -28,7 +28,7 @@ app.get("/", (req, res) => {
 });
 
 const userScores = {};
-const timeToWait = 10000;
+let livesByDefault = 5;
 
 io.on("connection", (socket) => {
   console.log("a user connected");
@@ -41,7 +41,11 @@ io.on("connection", (socket) => {
       userScores[roomId] = {};
     }
     if (!userScores[roomId][socket.id]) {
-      userScores[roomId][socket.id] = { userName, correctAnswers: 0 };
+      userScores[roomId][socket.id] = {
+        userName,
+        correctAnswers: 0,
+        lives: livesByDefault,
+      };
     }
 
     const room = io.sockets.adapter.rooms.get(roomId);
@@ -49,8 +53,9 @@ io.on("connection", (socket) => {
       const user = userScores[roomId][socketId] || {
         userName: "Anonymous",
         correctAnswers: 0,
+        lives: livesByDefault,
       };
-      return `${user.userName} (${user.correctAnswers})`;
+      return `${user.userName} - Score: ${user.correctAnswers} - Lives: ${user.lives}`;
     });
     io.to(roomId).emit("userList", users);
 
@@ -70,7 +75,12 @@ io.on("connection", (socket) => {
 
   socket.on("correctAnswerAttempt", ({ roomId }) => {
     if (userScores[roomId] && userScores[roomId][socket.id]) {
-      userScores[roomId][socket.id].correctAnswers += 1;
+      if (userScores[roomId][socket.id].lives > 0) {
+        userScores[roomId][socket.id].correctAnswers += 1;
+      } else {
+        socket.emit("forbidden", "You have 0 lives and cannot continue.");
+        return;
+      }
     }
     const keys = Object.keys(dictionaryJson);
     const randomWord = keys[Math.floor(Math.random() * keys.length)];
@@ -83,10 +93,22 @@ io.on("connection", (socket) => {
       const user = userScores[roomId][socketId] || {
         userName: "Anonymous",
         correctAnswers: 0,
+        lives: livesByDefault,
       };
-      return `${user.userName} (${user.correctAnswers})`;
+      return `${user.userName} - Score: ${user.correctAnswers} - Lives: ${user.lives}`;
     });
     io.to(roomId).emit("userList", users);
+
+    const allOutOfLives = Array.from(room || []).every(
+      (socketId) =>
+        userScores[roomId][socketId] && userScores[roomId][socketId].lives <= 0
+    );
+    if (allOutOfLives) {
+      io.to(roomId).emit(
+        "gameOver",
+        "Game Over. All players are out of lives."
+      );
+    }
   });
 
   socket.on("timeOver", ({ roomId }) => {
@@ -97,27 +119,53 @@ io.on("connection", (socket) => {
     io.sockets.adapter.rooms.get(roomId).randomString = randomSubstring;
     io.to(roomId).emit("randomString", randomSubstring);
 
+    Array.from(room || []).forEach((socketId) => {
+      if (userScores[roomId][socketId]) {
+        if (typeof userScores[roomId][socketId].lives !== "number") {
+          userScores[roomId][socketId].lives = livesByDefault;
+        }
+        if (userScores[roomId][socketId].lives > 0) {
+          userScores[roomId][socketId].lives -= 1;
+        }
+      }
+    });
+
     const users = Array.from(room || []).map((socketId) => {
       const user = userScores[roomId][socketId] || {
         userName: "Anonymous",
         correctAnswers: 0,
+        lives: livesByDefault,
       };
-      return `${user.userName} (${user.correctAnswers})`;
+      return `${user.userName} - Score: ${user.correctAnswers} - Lives: ${user.lives}`;
     });
     io.to(roomId).emit("userList", users);
+
+    const allOutOfLives = Array.from(room || []).every(
+      (socketId) =>
+        userScores[roomId][socketId] && userScores[roomId][socketId].lives <= 0
+    );
+    if (allOutOfLives) {
+      io.to(roomId).emit(
+        "gameOver",
+        "Game Over. All players are out of lives."
+      );
+    }
   });
 
   socket.on("disconnecting", () => {
     for (let roomId of socket.rooms) {
       if (roomId !== socket.id) {
         const room = io.sockets.adapter.rooms.get(roomId);
-        delete userScores[roomId][socket.id];
+        if (userScores[roomId]) {
+          delete userScores[roomId][socket.id];
+        }
         const users = Array.from(room || [])
           .filter((socketId) => socketId !== socket.id)
           .map((socketId) => {
             const user = userScores[roomId][socketId] || {
               userName: "Anonymous",
               correctAnswers: 0,
+              lives: livesByDefault,
             };
             return `${user.userName} (${user.correctAnswers})`;
           });
