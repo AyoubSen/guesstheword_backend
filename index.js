@@ -28,6 +28,7 @@ app.get("/", (req, res) => {
 });
 
 const userScores = {};
+const timeToWait = 10000;
 
 io.on("connection", (socket) => {
   console.log("a user connected");
@@ -67,7 +68,7 @@ io.on("connection", (socket) => {
     io.to(roomId).emit("userCount", roomUserCount);
   });
 
-  socket.on("correctAnswerAttempt", ({ roomId, submittedWord }) => {
+  socket.on("correctAnswerAttempt", ({ roomId }) => {
     if (userScores[roomId] && userScores[roomId][socket.id]) {
       userScores[roomId][socket.id].correctAnswers += 1;
     }
@@ -78,6 +79,24 @@ io.on("connection", (socket) => {
     io.to(roomId).emit("randomString", randomSubstring);
 
     const room = io.sockets.adapter.rooms.get(roomId);
+    const users = Array.from(room || []).map((socketId) => {
+      const user = userScores[roomId][socketId] || {
+        userName: "Anonymous",
+        correctAnswers: 0,
+      };
+      return `${user.userName} (${user.correctAnswers})`;
+    });
+    io.to(roomId).emit("userList", users);
+  });
+
+  socket.on("timeOver", ({ roomId }) => {
+    const room = io.sockets.adapter.rooms.get(roomId);
+    const keys = Object.keys(dictionaryJson);
+    const randomWord = keys[Math.floor(Math.random() * keys.length)];
+    const randomSubstring = randomWord.substring(0, 3);
+    io.sockets.adapter.rooms.get(roomId).randomString = randomSubstring;
+    io.to(roomId).emit("randomString", randomSubstring);
+
     const users = Array.from(room || []).map((socketId) => {
       const user = userScores[roomId][socketId] || {
         userName: "Anonymous",
