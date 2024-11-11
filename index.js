@@ -55,7 +55,11 @@ io.on("connection", (socket) => {
         correctAnswers: 0,
         lives: livesByDefault,
       };
-      return `${user.userName} - Score: ${user.correctAnswers} - Lives: ${user.lives}`;
+      return {
+        userName: user.userName,
+        score: user.correctAnswers,
+        lives: user.lives,
+      };
     });
     io.to(roomId).emit("userList", users);
 
@@ -71,6 +75,18 @@ io.on("connection", (socket) => {
 
     const roomUserCount = room ? room.size : 0;
     io.to(roomId).emit("userCount", roomUserCount);
+  });
+
+  socket.on("startGame", ({ roomId }) => {
+    const room = io.sockets.adapter.rooms.get(roomId);
+    if (room && room.size > 1) {
+      io.to(roomId).emit("gameStarted");
+    } else {
+      socket.emit(
+        "gameError",
+        "At least 2 players are required to start the game."
+      );
+    }
   });
 
   socket.on("correctAnswerAttempt", ({ roomId }) => {
@@ -95,19 +111,22 @@ io.on("connection", (socket) => {
         correctAnswers: 0,
         lives: livesByDefault,
       };
-      return `${user.userName} - Score: ${user.correctAnswers} - Lives: ${user.lives}`;
+      return {
+        userName: user.userName,
+        score: user.correctAnswers,
+        lives: user.lives,
+      };
     });
     io.to(roomId).emit("userList", users);
 
-    const allOutOfLives = Array.from(room || []).every(
+    const playersWithLives = Array.from(room || []).filter(
       (socketId) =>
-        userScores[roomId][socketId] && userScores[roomId][socketId].lives <= 0
+        userScores[roomId][socketId] && userScores[roomId][socketId].lives > 0
     );
-    if (allOutOfLives) {
-      io.to(roomId).emit(
-        "gameOver",
-        "Game Over. All players are out of lives."
-      );
+
+    if (playersWithLives.length === 1) {
+      const winner = userScores[roomId][playersWithLives[0]];
+      io.to(roomId).emit("gameOver", `Game Over. Winner: ${winner.userName}`);
     }
   });
 
@@ -136,20 +155,33 @@ io.on("connection", (socket) => {
         correctAnswers: 0,
         lives: livesByDefault,
       };
-      return `${user.userName} - Score: ${user.correctAnswers} - Lives: ${user.lives}`;
+      return {
+        userName: user.userName,
+        score: user.correctAnswers,
+        lives: user.lives,
+      };
     });
     io.to(roomId).emit("userList", users);
 
-    const allOutOfLives = Array.from(room || []).every(
+    const playersWithLives = Array.from(room || []).filter(
       (socketId) =>
-        userScores[roomId][socketId] && userScores[roomId][socketId].lives <= 0
+        userScores[roomId][socketId] && userScores[roomId][socketId].lives > 0
     );
-    if (allOutOfLives) {
-      io.to(roomId).emit(
-        "gameOver",
-        "Game Over. All players are out of lives."
-      );
+
+    if (playersWithLives.length === 1) {
+      const winner = userScores[roomId][playersWithLives[0]];
+      io.to(roomId).emit("gameOver", `Game Over. Winner: ${winner.userName}`);
     }
+  });
+
+  socket.on("pauseTimer", ({ roomId }) => {
+    console.log("pauseTimer");
+    io.to(roomId).emit("pauseTimerForAll");
+  });
+
+  socket.on("resumeTimer", ({ roomId }) => {
+    console.log("resumeTimer");
+    io.to(roomId).emit("resumeTimerForAll");
   });
 
   socket.on("disconnecting", () => {
@@ -167,7 +199,11 @@ io.on("connection", (socket) => {
               correctAnswers: 0,
               lives: livesByDefault,
             };
-            return `${user.userName} (${user.correctAnswers})`;
+            return {
+              userName: user.userName,
+              score: user.correctAnswers,
+              lives: user.lives,
+            };
           });
         io.to(roomId).emit("userList", users);
 
